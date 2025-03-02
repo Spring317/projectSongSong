@@ -68,27 +68,29 @@ public class DownloadManager {
             outputFile.setLength(fileSize);
             
             // Calculate chunks
-            int numSources = sources.size();
-            long chunkSize = fileSize / numSources;
-            if (chunkSize == 0) {
-                chunkSize = 1;
-            }
+            // Calculate chunks with a maximum size limit
+        int numSources = sources.size();
+        final long MAX_CHUNK_SIZE = 1024 * 1024; // 1MB chunk size limit
+        int numChunks = (int)Math.ceil((double)fileSize / MAX_CHUNK_SIZE);
+
+        // Ensure we have at least as many chunks as sources
+        numChunks = Math.max(numChunks, numSources);
+        long chunkSize = (fileSize + numChunks - 1) / numChunks; // Ceiling division
+
+        // Create download tasks - distributing chunks among available sources
+        CompletionService<Boolean> completionService = 
+            new ExecutorCompletionService<>(threadPool);
+        int taskCount = 0;
+
+        for (int i = 0; i < numChunks; i++) {
+            ClientInfo source = sources.get(i % numSources); // Round-robin distribution
+            long startOffset = i * chunkSize;
+            long endOffset = Math.min((i + 1) * chunkSize, fileSize);
             
-            // Create download tasks
-            CompletionService<Boolean> completionService = 
-                new ExecutorCompletionService<>(threadPool);
-            int taskCount = 0;
-            
-            for (int i = 0; i < numSources; i++) {
-                ClientInfo source = sources.get(i);
-                long startOffset = i * chunkSize;
-                long endOffset = (i == numSources - 1) ? fileSize : (i + 1) * chunkSize;
-                
-                completionService.submit(() -> downloadChunk(
-                    source, filename, startOffset, (int)(endOffset - startOffset), outputFile));
-                taskCount++;
-            }
-            
+            completionService.submit(() -> downloadChunk(
+                source, filename, startOffset, (int)(endOffset - startOffset), outputFile));
+            taskCount++;
+        }
             // Wait for all downloads to complete
             boolean success = true;
             for (int i = 0; i < taskCount; i++) {
