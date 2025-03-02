@@ -1,0 +1,2 @@
+rename mohinh-hsi-du-doan-NPK.py
+Train K thanh binary class 
