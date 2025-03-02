@@ -114,79 +114,80 @@ public class DownloadManager {
     }
 
     private long getFileSize(ClientInfo source, String filename) {
-        try (Socket socket = new Socket(source.getHost(), source.getPort());
-             DataInputStream in = new DataInputStream(socket.getInputStream());
-             DataOutputStream out = new DataOutputStream(socket.getOutputStream())) {
-            
-            // Request a small chunk to verify file exists
-            out.writeUTF(filename);
-            out.writeLong(0);  // Start from beginning
-            out.writeInt(1);   // Just request 1 byte to check if file exists
-            out.flush();
-            
-            int response = in.readInt();
-            if (response <= 0) {
-                return -1; // File not found or other error
+        try {
+            // First check if file exists
+            try (Socket socket = new Socket(source.getHost(), source.getPort());
+                 DataInputStream in = new DataInputStream(socket.getInputStream());
+                 DataOutputStream out = new DataOutputStream(socket.getOutputStream())) {
+                
+                out.writeUTF(filename);
+                out.writeLong(0);
+                out.writeInt(1);
+                out.flush();
+                
+                int response = in.readInt();
+                if (response <= 0) {
+                    return -1; // File doesn't exist
+                }
+                in.readByte(); // Skip the byte
             }
             
-            // Skip the byte we requested
-            in.readByte();
+            // Find approximate file size with exponential probing
+            long start = 0;
+            long end = 1024; // Start with 1KB
             
-            // Now get the full file size with a second connection
-            try (Socket sizeSocket = new Socket(source.getHost(), source.getPort());
-                 DataInputStream sizeIn = new DataInputStream(sizeSocket.getInputStream());
-                 DataOutputStream sizeOut = new DataOutputStream(sizeSocket.getOutputStream())) {
-                
-                // Get file contents to determine size
-                sizeOut.writeUTF(filename);
-                sizeOut.writeLong(0);  // Start from beginning
-                sizeOut.writeInt(8192); // Request a reasonable chunk size
-                sizeOut.flush();
-                
-                int chunkSize = sizeIn.readInt();
-                if (chunkSize <= 0) {
-                    return -1; // Error response
-                }
-                
-                // Check if we got the entire file
-                byte[] buffer = new byte[chunkSize];
-                int bytesRead = 0;
-                int totalRead = 0;
-                
-                while (totalRead < chunkSize && 
-                      (bytesRead = sizeIn.read(buffer, totalRead, chunkSize - totalRead)) != -1) {
-                    totalRead += bytesRead;
-                }
-                
-                // If we got less than 8192 bytes, this is the whole file size
-                if (totalRead < 8192) {
-                    return totalRead;
-                }
-                
-                // Otherwise, try to get more accurate size by requesting a large range
-                // This is more reliable than the previous approach
-                try (Socket finalSizeSocket = new Socket(source.getHost(), source.getPort());
-                     DataInputStream finalSizeIn = new DataInputStream(finalSizeSocket.getInputStream());
-                     DataOutputStream finalSizeOut = new DataOutputStream(finalSizeSocket.getOutputStream())) {
+            while (true) {
+                try (Socket socket = new Socket(source.getHost(), source.getPort());
+                     DataInputStream in = new DataInputStream(socket.getInputStream());
+                     DataOutputStream out = new DataOutputStream(socket.getOutputStream())) {
                     
-                    // This time request the file info by checking at larger offset
-                    finalSizeOut.writeUTF(filename);
-                    finalSizeOut.writeLong(8192);  // Start after our previous chunk
-                    finalSizeOut.writeInt(16384);  // Request another reasonable chunk
-                    finalSizeOut.flush();
+                    out.writeUTF(filename);
+                    out.writeLong(end);
+                    out.writeInt(1);
+                    out.flush();
                     
-                    int remainingSize = finalSizeIn.readInt();
-                    if (remainingSize <= 0) {
-                        // No more data after first chunk, so first chunk was the full file
-                        return chunkSize;
+                    int response = in.readInt();
+                    if (response <= 0) {
+                        break; // Found a position beyond the file
+                    }
+                    
+                    in.readByte(); // Skip data
+                    start = end;
+                    end *= 2; // Double each time
+                    
+                    // if (end > 1_073_741_824L) { // Cap at 1GB for safety
+                    //     break;
+                    // }
+                }
+            }
+            
+            // Binary search for exact file size
+            while (end - start > 1) {
+                long mid = start + (end - start) / 2;
+                
+                try (Socket socket = new Socket(source.getHost(), source.getPort());
+                     DataInputStream in = new DataInputStream(socket.getInputStream());
+                     DataOutputStream out = new DataOutputStream(socket.getOutputStream())) {
+                    
+                    out.writeUTF(filename);
+                    out.writeLong(mid);
+                    out.writeInt(1);
+                    out.flush();
+                    
+                    int response = in.readInt();
+                    if (response > 0) {
+                        in.readByte();
+                        start = mid;
                     } else {
-                        // We have more data, add it to our total
-                        return 8192 + remainingSize;
+                        end = mid;
                     }
                 }
             }
+            
+            return start + 1; // This should be the exact file size
         } catch (IOException e) {
             System.err.println("Error getting file size: " + e.getMessage());
+            e.printStackTrace();
             return -1;
         }
     }
