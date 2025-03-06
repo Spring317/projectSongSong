@@ -10,10 +10,92 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.rmi.registry.LocateRegistry;
 import java.rmi.registry.Registry;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.*;
 
 public class DownloadManager {
+    // Download timer field
+    private final ConcurrentHashMap<String, Long> downloadStartTimes = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Long> downloadEndTimes = new ConcurrentHashMap<>();
+    
+    public Map<String, Integer> listAvailableFiles() {
+    try {
+        if (directoryService == null) {
+            connect();
+        }
+        
+        return directoryService.listAvailableFiles();
+    } catch (Exception e) {
+        System.err.println("Error listing available files: " + e.getMessage());
+        return new HashMap<>();
+    }
+}
+
+public void displayAvailableFiles() {
+    try {
+        Map<String, Integer> files = listAvailableFiles();
+        
+        if (files.isEmpty()) {
+            System.out.println("No files available for download.");
+            return;
+        }
+        
+        System.out.println("\nAvailable files:");
+        System.out.println("--------------------------------------------------");
+        System.out.printf("%-30s | %-10s\n", "FILENAME", "SOURCES");
+        System.out.println("--------------------------------------------------");
+        
+        files.entrySet().stream()
+            .sorted(Map.Entry.comparingByKey())
+            .forEach(entry -> {
+                System.out.printf("%-30s | %-10d\n", entry.getKey(), entry.getValue());
+            });
+        
+        System.out.println("--------------------------------------------------");
+    } catch (Exception e) {
+        System.err.println("Error displaying available files: " + e.getMessage());
+        }
+    }
+    
+    private void startDownloadTimer(String filename) {
+        downloadStartTimes.put(filename, System.currentTimeMillis());
+    }
+    
+    /**
+     * Stops the download timer for a specific file
+     */
+    private void stopDownloadTimer(String filename) {
+        downloadEndTimes.put(filename, System.currentTimeMillis());
+    }
+    
+    /**
+     * Gets the download statistics as a formatted string
+     */
+    public String getDownloadStats(String filename, long fileSize) {
+        Long startTime = downloadStartTimes.get(filename);
+        Long endTime = downloadEndTimes.get(filename);
+        
+        if (startTime != null && endTime != null) {
+            long timeMs = endTime - startTime;
+            double seconds = timeMs / 1000.0;
+            double speed = (fileSize * 1000.0) / timeMs; // bytes per second
+            
+            String speedStr;
+            if (speed >= 1_048_576) { // 1 MB/s
+                speedStr = String.format("%.2f MB/s", speed / 1_048_576);
+            } else if (speed >= 1024) { // 1 KB/s
+                speedStr = String.format("%.2f KB/s", speed / 1024);
+            } else {
+                speedStr = String.format("%.2f B/s", speed);
+            }
+            
+            return String.format("Download completed in %.2f seconds (Speed: %s)", seconds, speedStr);
+        }
+        
+        return "Download time not available";
+    }
     private final String directoryHost;
     private final int directoryPort;
     private final Path downloadDirectory;
@@ -67,6 +149,9 @@ public class DownloadManager {
             RandomAccessFile outputFile = new RandomAccessFile(outputPath.toFile(), "rw");
             outputFile.setLength(fileSize);
             
+            // Start timing the download
+            startDownloadTimer(filename);
+            
             // Calculate chunks
             // Calculate chunks with a maximum size limit
         int numSources = sources.size();
@@ -95,13 +180,22 @@ public class DownloadManager {
             boolean success = true;
             for (int i = 0; i < taskCount; i++) {
                 Future<Boolean> result = completionService.take();
-                success = success && result.get();
+                try {
+                    if (!result.get()) {
+                        success = false;
+                    }
+                } catch (ExecutionException e) {
+                    success = false;
+                    System.err.println("Chunk download failed: " + e.getCause().getMessage());
+                }
             }
             
             outputFile.close();
             
             if (success) {
                 System.out.println("Downloaded " + filename + " successfully");
+                stopDownloadTimer(filename);
+                System.out.println(getDownloadStats(filename, fileSize));
             } else {
                 System.out.println("Download incomplete for " + filename);
                 Files.deleteIfExists(outputPath);

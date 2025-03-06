@@ -7,6 +7,7 @@ import java.rmi.registry.LocateRegistry;
 import java.rmi.registry.Registry;
 import java.rmi.server.UnicastRemoteObject;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -40,6 +41,18 @@ public class DirectoryServer implements DirectoryInterface {
         System.out.println("File registered: " + file.getFilename() + " by client: " + clientId);
     }
     
+    @Override
+    public Map<String, Integer> listAvailableFiles() throws RemoteException {
+        Map<String, Integer> availableFiles = new HashMap<>();
+        
+        for (Map.Entry<String, List<String>> entry : fileOwners.entrySet()) {
+            // Store filename and number of sources
+            availableFiles.put(entry.getKey(), entry.getValue().size());
+        }
+        
+        return availableFiles;
+    }
+
     @Override
     public List<ClientInfo> getFileLocations(String filename) throws RemoteException {
         List<String> owners = fileOwners.getOrDefault(filename, new ArrayList<>());
