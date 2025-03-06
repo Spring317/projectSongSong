@@ -1,11 +1,7 @@
 import daemon.ClientDaemon;
 import directory.DirectoryServer;
 import download.DownloadManager;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.nio.file.StandardCopyOption;
-import java.io.IOException;
+
 import java.util.Scanner;
 
 public class Main {
@@ -178,73 +174,6 @@ public class Main {
 
         // Handle interactive commands
         Scanner scanner = new Scanner(System.in);
-        boolean running = true;
-        
-        while (running) {
-            System.out.println("\nClient Daemon Console");
-            System.out.println("1. Update network simulation settings");
-            System.out.println("2. Upload a file");
-            System.out.println("3. List shared files");
-            System.out.println("0. Exit");
-            System.out.print("Choice: ");
-            
-            String choice = scanner.nextLine();
-            
-            switch (choice) {
-                case "1":
-                    // This feature requires implementation in ClientDaemon first
-                    System.out.println("Network simulation feature not implemented yet.");
-                    break;
-                    
-                case "2":
-                    System.out.print("Enter path to file to upload: ");
-                    String filePath = scanner.nextLine();
-                    if (!filePath.isEmpty()) {
-                        // Call upload method if implemented
-                        try {
-                            Path source = Paths.get(filePath);
-                            if (!Files.exists(source)) {
-                                System.out.println("File does not exist: " + filePath);
-                                break;
-                            }
-                            
-                            String filename = source.getFileName().toString();
-                            Path destination = Paths.get(sharedDir).resolve(filename);
-                            
-                            System.out.println("Copying file to shared directory...");
-                            Files.copy(source, destination, StandardCopyOption.REPLACE_EXISTING);
-                            
-                            System.out.println("File copied successfully. Registering with directory service...");
-                            daemon.registerFileWithDirectory(filename);
-                            
-                            System.out.println("File uploaded and registered: " + filename);
-                        } catch (Exception e) {
-                            System.err.println("Error uploading file: " + e.getMessage());
-                        }
-                    }
-                    break;
-                    
-                case "3":
-                    // List files in shared directory
-                    try {
-                        System.out.println("\nShared files:");
-                        Files.list(Paths.get(sharedDir))
-                            .filter(Files::isRegularFile)
-                            .forEach(p -> System.out.println(p.getFileName()));
-                    } catch (IOException e) {
-                        System.err.println("Error listing files: " + e.getMessage());
-                    }
-                    break;
-                    
-                case "0":
-                    running = false;
-                    daemon.stop();
-                    break;       
-                default:
-                    System.out.println("Invalid choice.");
-                    break;
-            }
-        }
         
         scanner.close();
     }
