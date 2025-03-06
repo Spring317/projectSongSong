@@ -180,6 +180,23 @@ public class ClientDaemon {
         }
     }
 
+    public void registerFileWithDirectory(String filename) {
+        try {
+            Path filePath = sharedDirectory.resolve(filename);
+            if (!Files.exists(filePath)) {
+                System.out.println("File not found in shared directory: " + filename);
+                return;
+            }
+            
+            long fileSize = Files.size(filePath);
+            FileInfo fileInfo = new FileInfo(filename, fileSize);
+            directoryService.registerFile(clientId, fileInfo);
+            System.out.println("File registered with directory: " + filename);
+        } catch (Exception e) {
+            System.err.println("Error registering file: " + e.getMessage());
+        }
+    }
+
     public void stop() {
         running = false;
         try {
