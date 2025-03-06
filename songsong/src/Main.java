@@ -99,6 +99,7 @@ public class Main {
             
             while (running) {
                 System.out.println("\nDownload Manager");
+                manager.displayAvailableFiles();
                 System.out.println("1. Download file");
                 System.out.println("0. Exit");
                 System.out.print("Choice: ");
